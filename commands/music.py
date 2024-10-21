@@ -29,9 +29,21 @@ class Music(commands.Cog):
     @commands.command(name='play')
     async def play(self, ctx, *, url):
         """Play a song from a URL."""
+        if ctx.author.voice and ctx.voice_client is None:
+            # If the user is in a voice channel but the bot is not, join the channel.
+            channel = ctx.author.voice.channel
+            await channel.connect()
+
         if ctx.voice_client is None:
             await ctx.send("I'm not connected to a voice channel. Use >>join to connect :>")
             return
+
+        # Delete the triggering message
+        await ctx.message.delete()
+
+        # Stop currently playing song if it exists
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
 
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -49,8 +61,6 @@ class Music(commands.Cog):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
                 info = ydl.extract_info(url, download=False)
-
-                # Use the direct URL from the info object
                 audio_url = info['url']
                 title = info.get('title', 'Unknown Title')
 

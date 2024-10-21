@@ -54,7 +54,7 @@ class Logger:
 
         @bot.event
         async def on_ready():
-            self.log_event("INIT", bot.user, "f'Bot is ready! Logged in as {bot.user}'")
+            self.log_event("INIT", bot.user, f"'Bot is ready! Logged in as {bot.user}'")
 
         @bot.event
         async def on_message(message):
