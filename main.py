@@ -15,5 +15,6 @@ bot.load_extension('commands.help')
 bot.load_extension('commands.ping')
 bot.load_extension('commands.bible')
 bot.load_extension('commands.music')
+bot.load_extension('commands.advice')
 
 bot.run(TOKEN)
