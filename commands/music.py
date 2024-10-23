@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import yt_dlp
-import json
 
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -12,6 +11,9 @@ class Music(commands.Cog):
         """Join the voice channel."""
         if ctx.author.voice:
             channel = ctx.author.voice.channel
+            if ctx.voice_client and ctx.voice_client.channel == channel:
+                await ctx.send(f"I'm already in {channel}!")
+                return
             await channel.connect()
             await ctx.send(f"Joined {channel}!")
         else:
@@ -29,21 +31,20 @@ class Music(commands.Cog):
     @commands.command(name='play')
     async def play(self, ctx, *, url):
         """Play a song from a URL."""
-        if ctx.author.voice and ctx.voice_client is None:
-            # If the user is in a voice channel but the bot is not, join the channel.
+        if ctx.author.voice:
             channel = ctx.author.voice.channel
-            await channel.connect()
-
-        if ctx.voice_client is None:
-            await ctx.send("I'm not connected to a voice channel. Use >>join to connect :>")
+            if ctx.voice_client is None:
+                await channel.connect()
+            elif ctx.voice_client.channel != channel:
+                await ctx.voice_client.move_to(channel)
+        else:
+            await ctx.send("You need to be in a voice channel to use this command.")
             return
 
-        # Delete the triggering message
-        await ctx.message.delete()
-
-        # Stop currently playing song if it exists
         if ctx.voice_client.is_playing():
             ctx.voice_client.stop()
+
+        await ctx.message.delete()
 
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -55,7 +56,7 @@ class Music(commands.Cog):
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'noplaylist': True,
             'quiet': False,
-            'nocheckcertificate': True  # Added for potential SSL issues
+            'nocheckcertificate': True  
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -74,16 +75,15 @@ class Music(commands.Cog):
                 return
 
         voice_client = ctx.voice_client
-        print(f'Playing URL: {audio_url}')  # Debug output
+        print(f'Playing URL: {audio_url}')
 
         try:
-            # FFmpeg reconnect options for handling stream drops
             before_options = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
             voice_client.play(
                 discord.FFmpegPCMAudio(
                     audio_url,
                     before_options=before_options,
-                    options="-vn -loglevel quiet",  # Cleaner output, no video stream
+                    options="-vn -loglevel quiet",
                 ),
                 after=lambda e: print(f'Finished playing: {e}') if e else None
             )
