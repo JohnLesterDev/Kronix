@@ -1,7 +1,6 @@
 import os
 import time
 import subprocess
-
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -14,6 +13,8 @@ class RestartHandler(FileSystemEventHandler):
         return subprocess.Popen(["py", self.script])
 
     def on_any_event(self, event):
+        if event.src_path.endswith("HISTORY.log"):
+            return
         self.process.terminate()
         self.process = self.start_bot()
 
