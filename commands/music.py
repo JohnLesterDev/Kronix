@@ -17,9 +17,17 @@ class Music(commands.Cog):
         
         if queue:
             next_song = queue.pop(0)
-            await self.start_playback(ctx, next_song)
+            await self.start_playback(ctx, next_song['url'])
         else:
             await ctx.voice_client.disconnect()
+
+    async def send_embed(self, ctx, title, description):
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=discord.Color.from_rgb(117, 88, 39)
+        )
+        await ctx.send(embed=embed)
 
     async def start_playback(self, ctx, song_url):
         ydl_opts = {
@@ -27,7 +35,7 @@ class Music(commands.Cog):
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '192',
+                'preferredquality': '320',
             }],
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'noplaylist': True,
@@ -42,11 +50,11 @@ class Music(commands.Cog):
                 title = info.get('title', 'Unknown Title')
             except KeyError as e:
                 print(f"KeyError: {str(e)} while extracting info for URL: {song_url}")
-                await ctx.send("An error occurred while extracting the audio.")
+                await self.send_embed(ctx, "Error", "An error occurred while extracting the audio.")
                 return
             except Exception as e:
                 print(f"Unexpected error: {str(e)} while extracting info for URL: {song_url}")
-                await ctx.send("An unexpected error occurred.")
+                await self.send_embed(ctx, "Error", "An unexpected error occurred.")
                 return
 
         voice_client = ctx.voice_client
@@ -58,7 +66,7 @@ class Music(commands.Cog):
                 discord.FFmpegPCMAudio(
                     audio_url,
                     before_options=before_options,
-                    options="-vn -loglevel quiet",
+                    options="-vn -b:a 320k -loglevel quiet",
                 ),
                 after=lambda e: self.bot.loop.create_task(self.play_next(ctx))
             )
@@ -111,11 +119,13 @@ class Music(commands.Cog):
 
         if 'entries' in info:
             for entry in info['entries']:
-                queue.append(entry['url'])
+                title = entry.get('title', 'Unknown Title')
+                queue.append({'title': title, 'url': entry['url']})
             await ctx.send(f"Added {len(info['entries'])} songs to the queue from the playlist!")
         else:
-            queue.append(info['url'])
-            await ctx.send(f"Added {info.get('title', 'Unknown Title')} to the queue!")
+            title = info.get('title', 'Unknown Title')
+            queue.append({'title': title, 'url': info['url']})
+            await ctx.send(f"Added {title} to the queue!")
 
         if not ctx.voice_client.is_playing():
             await self.play_next(ctx)
@@ -140,10 +150,11 @@ class Music(commands.Cog):
 
     @commands.command(name='stop')
     async def stop(self, ctx):
-        """Stop the currently playing song."""
+        """Stop the currently playing song and clear the queue."""
         if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.stop()
-            await ctx.send("Stopped the music.")
+            self.queues[ctx.guild.id] = []  # Clear the queue
+            await ctx.send("Stopped the music and cleared the queue.")
         else:
             await ctx.send("No music is currently playing.")
 
@@ -158,12 +169,52 @@ class Music(commands.Cog):
 
     @commands.command(name='queue')
     async def show_queue(self, ctx):
-        """Show the current music queue."""
+        """Show the current music queue with pagination."""
         queue = self.get_guild_queue(ctx.guild.id)
-        if queue:
-            await ctx.send("\n".join(f"{idx+1}. {url}" for idx, url in enumerate(queue)))
-        else:
+        if not queue:
             await ctx.send("The queue is empty.")
+            return
+
+        items_per_page = 10  # Number of songs per page
+        pages = []  # List to hold the embeds
+        for i in range(0, len(queue), items_per_page):
+            embed = discord.Embed(
+                title="Current Queue",
+                color=discord.Color.from_rgb(117, 88, 39)
+            )
+            for idx, song in enumerate(queue[i:i + items_per_page]):
+                embed.add_field(name=f"{i + idx + 1}. {song['title']}", value="\u200b", inline=False)
+            pages.append(embed)
+
+        message = await ctx.send(embed=pages[0])
+
+        if len(pages) > 1:
+            await message.add_reaction("⏮️")  # First page
+            await message.add_reaction("⏭️")  # Next page
+
+            def check(reaction, user):
+                return user == ctx.author and reaction.message.id == message.id and str(reaction.emoji) in ["⏮️", "⏭️"]
+
+            current_page = 0
+            while True:
+                try:
+                    reaction, user = await self.bot.wait_for("reaction_add", timeout=60.0, check=check)
+
+                    if str(reaction.emoji) == "⏮️":
+                        if current_page > 0:
+                            current_page -= 1
+                            await message.edit(embed=pages[current_page])
+                        await reaction.remove(user)
+
+                    elif str(reaction.emoji) == "⏭️":
+                        if current_page < len(pages) - 1:
+                            current_page += 1
+                            await message.edit(embed=pages[current_page])
+                        await reaction.remove(user)
+
+                except Exception:
+                    break
+
 
 def setup(bot):
     bot.add_cog(Music(bot))
